@@ -30,6 +30,16 @@ void URuntimeGameplaySettingsParameterWidget::SetDefaultParameterValue(float InV
 	UpdateResetButtonState();
 }
 
+void URuntimeGameplaySettingsParameterWidget::SetParameterRange(float InMinValue, float InMaxValue, float InStepSize)
+{
+	MinValue = InMinValue;
+	MaxValue = InMaxValue;
+	StepSize = FMath::Max(0.0f, InStepSize);
+	ApplyParameterMetadata();
+	SyncWidgetsToCurrentValue();
+	UpdateResetButtonState();
+}
+
 float URuntimeGameplaySettingsParameterWidget::GetParameterValue() const
 {
 	return CurrentValue;

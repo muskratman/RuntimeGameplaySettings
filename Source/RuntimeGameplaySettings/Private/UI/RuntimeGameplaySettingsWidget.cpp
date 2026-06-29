@@ -1,6 +1,7 @@
 #include "UI/RuntimeGameplaySettingsWidget.h"
 
 #include "Blueprint/WidgetTree.h"
+#include "Components/Border.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/HorizontalBox.h"
@@ -19,29 +20,68 @@
 #include "Runtime/RuntimeGameplaySettingsPropertyAccess.h"
 #include "Runtime/RuntimeGameplaySettingsSnapshotLibrary.h"
 #include "Runtime/RuntimeGameplaySettingsTargetResolver.h"
+#include "Settings/RuntimeGameplaySettingsProjectSettings.h"
 #include "Subsystems/RuntimeGameplaySettingsSubsystem.h"
 #include "Templates/UnrealTemplate.h"
 #include "UI/Elements/RuntimeGameplaySettingsButtonWidget.h"
 #include "UI/Elements/RuntimeGameplaySettingsCheckboxWidget.h"
+#include "UI/Elements/RuntimeGameplaySettingsCurveAssetWidget.h"
+#include "UI/Elements/RuntimeGameplaySettingsCurveWidget.h"
 #include "UI/Elements/RuntimeGameplaySettingsEnumWidget.h"
 #include "UI/Elements/RuntimeGameplaySettingsElementWidgetHelpers.h"
+#include "UI/Elements/RuntimeGameplaySettingsFloatArrayWidget.h"
 #include "UI/Elements/RuntimeGameplaySettingsParameterWidget.h"
 #include "UI/Elements/RuntimeGameplaySettingsValueWidgetBase.h"
 #include "UI/Elements/RuntimeGameplaySettingsVectorWidget.h"
 #include "UI/RuntimeGameplaySettingsButtonsOverlayWidget.h"
 #include "UI/RuntimeGameplaySettingsCategorySwitcherWidget.h"
 #include "UI/RuntimeGameplaySettingsCategoryTabsWidget.h"
+#include "UI/RuntimeGameplaySettingsComponentGroupWidget.h"
 #include "UI/RuntimeGameplaySettingsSaveSlotPanelWidget.h"
+
+namespace
+{
+	constexpr int32 RuntimeGameplaySettingsBaseToolTipFontSize = 10;
+	constexpr float RuntimeGameplaySettingsToolTipFontScale = 1.3f;
+
+	template <typename WidgetType>
+	TSubclassOf<WidgetType> ResolveConfiguredWidgetClass(
+		const TSoftClassPtr<WidgetType>& ConfiguredClass,
+		TSubclassOf<WidgetType> FallbackClass)
+	{
+		if (UClass* LoadedClass = ConfiguredClass.LoadSynchronous())
+		{
+			if (LoadedClass->IsChildOf(WidgetType::StaticClass()))
+			{
+				return LoadedClass;
+			}
+		}
+
+		if (FallbackClass)
+		{
+			return FallbackClass;
+		}
+
+		return WidgetType::StaticClass();
+	}
+}
 
 URuntimeGameplaySettingsWidget::URuntimeGameplaySettingsWidget(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
 	CategoryButtonWidgetClass = URuntimeGameplaySettingsButtonWidget::StaticClass();
+	SaveSlotPanelWidgetClass = URuntimeGameplaySettingsSaveSlotPanelWidget::StaticClass();
+	ButtonsOverlayWidgetClass = URuntimeGameplaySettingsButtonsOverlayWidget::StaticClass();
+	CategoryTabsWidgetClass = URuntimeGameplaySettingsCategoryTabsWidget::StaticClass();
 	CategoryPageWidgetClass = URuntimeGameplaySettingsCategorySwitcherWidget::StaticClass();
+	ComponentGroupWidgetClass = URuntimeGameplaySettingsComponentGroupWidget::StaticClass();
 	BoolPropertyWidgetClass = URuntimeGameplaySettingsCheckboxWidget::StaticClass();
 	NumberPropertyWidgetClass = URuntimeGameplaySettingsParameterWidget::StaticClass();
 	EnumPropertyWidgetClass = URuntimeGameplaySettingsEnumWidget::StaticClass();
 	VectorPropertyWidgetClass = URuntimeGameplaySettingsVectorWidget::StaticClass();
+	CurvePropertyWidgetClass = URuntimeGameplaySettingsCurveWidget::StaticClass();
+	CurveAssetPropertyWidgetClass = URuntimeGameplaySettingsCurveAssetWidget::StaticClass();
+	FloatArrayPropertyWidgetClass = URuntimeGameplaySettingsFloatArrayWidget::StaticClass();
 }
 
 void URuntimeGameplaySettingsWidget::InitializeRuntimeGameplaySettings(
@@ -117,6 +157,7 @@ FReply URuntimeGameplaySettingsWidget::NativeOnKeyDown(const FGeometry& InGeomet
 void URuntimeGameplaySettingsWidget::RebuildRuntimeWidget()
 {
 	EnsureDefaultWidgetTree();
+	ApplyConfiguredWidgetClasses();
 
 	if (!WidgetTree)
 	{
@@ -185,12 +226,18 @@ void URuntimeGameplaySettingsWidget::ClearGeneratedCategoryContent()
 
 void URuntimeGameplaySettingsWidget::BuildRows()
 {
+	BuildAutomaticRows();
+	BuildManualRows();
+	ActivateRuntimeCategory(0);
+}
+
+void URuntimeGameplaySettingsWidget::BuildAutomaticRows()
+{
 	UVerticalBox* CommonCategoryBox = GetOrCreateCategoryContentBox(TEXT("Common"));
 
 	if (!Profile)
 	{
 		AddMessageRow(CommonCategoryBox, INVTEXT("No RuntimeGameplaySettings profile configured."));
-		ActivateRuntimeCategory(0);
 		return;
 	}
 
@@ -198,7 +245,6 @@ void URuntimeGameplaySettingsWidget::BuildRows()
 	if (!PlayerController)
 	{
 		AddMessageRow(CommonCategoryBox, INVTEXT("No local PlayerController found."));
-		ActivateRuntimeCategory(0);
 		return;
 	}
 
@@ -222,15 +268,16 @@ void URuntimeGameplaySettingsWidget::BuildRows()
 			for (const FRuntimeGameplaySettingsPropertyEntry& PropertyEntry : ClassEntry.Properties)
 			{
 				const FString RuntimeCategoryName = GetRuntimeCategoryName(PropertyEntry);
-				UVerticalBox* CategoryBox = GetOrCreateCategoryContentBox(RuntimeCategoryName);
-				if (!CategoryBox)
+				UVerticalBox* PropertyParentBox =
+					GetOrCreateComponentGroupContentBox(RuntimeCategoryName, TargetObject, PropertyEntry);
+				if (!PropertyParentBox)
 				{
 					continue;
 				}
 
 				SetCategoryTitleFromTargetClass(RuntimeCategoryName, TargetClass);
 
-				AddPropertyRow(CategoryBox, TargetObject, PropertyEntry);
+				AddPropertyRow(PropertyParentBox, TargetObject, PropertyEntry);
 			}
 		}
 	}
@@ -242,7 +289,10 @@ void URuntimeGameplaySettingsWidget::BuildRows()
 			INVTEXT("No matching runtime targets or supported properties found."));
 	}
 
-	ActivateRuntimeCategory(0);
+}
+
+void URuntimeGameplaySettingsWidget::BuildManualRows()
+{
 }
 
 void URuntimeGameplaySettingsWidget::AddMessageRow(UVerticalBox* ParentBox, const FText& Message)
@@ -269,11 +319,10 @@ void URuntimeGameplaySettingsWidget::AddPropertyRow(
 		return;
 	}
 
-	const FText LabelText = PropertyEntry.DisplayName.IsEmpty()
-		? FText::FromString(FRuntimeGameplaySettingsPropertyAccess::BuildPropertyPathString(
-			PropertyEntry.PropertyPath,
-			PropertyEntry.PropertyName))
-		: PropertyEntry.DisplayName;
+	FRuntimeGameplaySettingsValue BaselineValue = CurrentValue;
+	TryGetBaselineValue(TargetObject, PropertyEntry, BaselineValue);
+
+	const FText LabelText = GetPropertyRowLabelText(PropertyEntry);
 
 	const FString WidgetName = MakeUniqueWidgetName(TEXT("Property"), LabelText.ToString(), UsedGeneratedWidgetNames);
 	URuntimeGameplaySettingsValueWidgetBase* ValueWidget = nullptr;
@@ -282,7 +331,7 @@ void URuntimeGameplaySettingsWidget::AddPropertyRow(
 	RowState.TargetObject = TargetObject;
 	RowState.TargetClassPath = FSoftClassPath(TargetObject->GetClass());
 	RowState.PropertyEntry = PropertyEntry;
-	RowState.BaselineValue = CurrentValue;
+	RowState.BaselineValue = BaselineValue;
 
 	switch (PropertyEntry.ValueType)
 	{
@@ -297,7 +346,7 @@ void URuntimeGameplaySettingsWidget::AddPropertyRow(
 				CheckboxWidget->Initialize();
 				CheckboxWidget->SetParameterName(LabelText);
 				CheckboxWidget->SetCheckboxValue(CurrentValue.BoolValue);
-				CheckboxWidget->SetDefaultCheckboxValue(CurrentValue.BoolValue);
+				CheckboxWidget->SetDefaultCheckboxValue(BaselineValue.BoolValue);
 				ValueWidget = CheckboxWidget;
 			}
 		}
@@ -313,7 +362,7 @@ void URuntimeGameplaySettingsWidget::AddPropertyRow(
 				ParameterWidget->Initialize();
 				ParameterWidget->SetParameterName(LabelText);
 				ParameterWidget->SetParameterValue(CurrentValue.FloatValue);
-				ParameterWidget->SetDefaultParameterValue(CurrentValue.FloatValue);
+				ParameterWidget->SetDefaultParameterValue(BaselineValue.FloatValue);
 				ValueWidget = ParameterWidget;
 			}
 		}
@@ -329,7 +378,7 @@ void URuntimeGameplaySettingsWidget::AddPropertyRow(
 				ParameterWidget->Initialize();
 				ParameterWidget->SetParameterName(LabelText);
 				ParameterWidget->SetParameterValue(static_cast<float>(CurrentValue.IntValue));
-				ParameterWidget->SetDefaultParameterValue(static_cast<float>(CurrentValue.IntValue));
+				ParameterWidget->SetDefaultParameterValue(static_cast<float>(BaselineValue.IntValue));
 				ValueWidget = ParameterWidget;
 			}
 		}
@@ -349,7 +398,7 @@ void URuntimeGameplaySettingsWidget::AddPropertyRow(
 				EnumWidget->SetParameterName(LabelText);
 				EnumWidget->SetOptionsFromEnum(RuntimeEnum);
 				EnumWidget->SetSelectedValue(CurrentValue.IntValue);
-				EnumWidget->SetDefaultSelectedValue(CurrentValue.IntValue);
+				EnumWidget->SetDefaultSelectedValue(BaselineValue.IntValue);
 				ValueWidget = EnumWidget;
 			}
 		}
@@ -365,7 +414,7 @@ void URuntimeGameplaySettingsWidget::AddPropertyRow(
 				VectorWidget->Initialize();
 				VectorWidget->SetParameterName(LabelText);
 				VectorWidget->SetVectorValue(CurrentValue.VectorValue);
-				VectorWidget->SetDefaultVectorValue(CurrentValue.VectorValue);
+				VectorWidget->SetDefaultVectorValue(BaselineValue.VectorValue);
 				ValueWidget = VectorWidget;
 			}
 		}
@@ -383,9 +432,13 @@ void URuntimeGameplaySettingsWidget::AddPropertyRow(
 					CurrentValue.RotatorValue.Pitch,
 					CurrentValue.RotatorValue.Yaw,
 					CurrentValue.RotatorValue.Roll);
+				const FVector BaselineRotatorAsVector(
+					BaselineValue.RotatorValue.Pitch,
+					BaselineValue.RotatorValue.Yaw,
+					BaselineValue.RotatorValue.Roll);
 				VectorWidget->SetParameterName(LabelText);
 				VectorWidget->SetVectorValue(RotatorAsVector);
-				VectorWidget->SetDefaultVectorValue(RotatorAsVector);
+				VectorWidget->SetDefaultVectorValue(BaselineRotatorAsVector);
 				ValueWidget = VectorWidget;
 			}
 		}
@@ -400,6 +453,11 @@ void URuntimeGameplaySettingsWidget::AddPropertyRow(
 	}
 
 	RowState.ValueWidget = ValueWidget;
+	const FText PropertyToolTipText = GetPropertyToolTipText(TargetObject, PropertyEntry);
+	if (!PropertyToolTipText.IsEmpty())
+	{
+		ValueWidget->SetToolTip(CreateToolTipWidget(PropertyToolTipText));
+	}
 	if (UVerticalBoxSlot* RowSlot = ParentBox->AddChildToVerticalBox(ValueWidget))
 	{
 		RowSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 10.0f));
@@ -459,6 +517,318 @@ UVerticalBox* URuntimeGameplaySettingsWidget::GetOrCreateCategoryContentBox(cons
 	return CategoryStates.Last().ContentBox;
 }
 
+UVerticalBox* URuntimeGameplaySettingsWidget::GetOrCreateComponentGroupContentBox(
+	const FString& RuntimeCategoryName,
+	UObject* TargetObject,
+	const FRuntimeGameplaySettingsPropertyEntry& PropertyEntry)
+{
+	const FString ComponentGroupName = GetComponentGroupDisplayName(TargetObject, PropertyEntry);
+	return GetOrCreateComponentGroupContentBox(RuntimeCategoryName, ComponentGroupName);
+}
+
+UVerticalBox* URuntimeGameplaySettingsWidget::GetOrCreateComponentGroupContentBox(
+	const FString& RuntimeCategoryName,
+	const FString& GroupDisplayName)
+{
+	UVerticalBox* CategoryBox = GetOrCreateCategoryContentBox(RuntimeCategoryName);
+	if (!CategoryBox || !WidgetTree || !ComponentGroupWidgetClass)
+	{
+		return CategoryBox;
+	}
+
+	FRuntimeGameplaySettingsCategoryState* CategoryState = FindCategoryState(RuntimeCategoryName);
+	if (!CategoryState)
+	{
+		return CategoryBox;
+	}
+
+	const FString ComponentGroupName = GroupDisplayName.TrimStartAndEnd();
+	if (ComponentGroupName.IsEmpty())
+	{
+		return CategoryBox;
+	}
+
+	if (TObjectPtr<URuntimeGameplaySettingsComponentGroupWidget>* ExistingGroup =
+		CategoryState->ComponentGroupWidgets.Find(ComponentGroupName))
+	{
+		return ExistingGroup->Get()
+			? ExistingGroup->Get()->GetOrCreatePropertiesBox()
+			: CategoryBox;
+	}
+
+	const FString GroupWidgetName = MakeUniqueWidgetName(
+		TEXT("ComponentGroup"),
+		RuntimeCategoryName + TEXT("_") + ComponentGroupName,
+		UsedGeneratedWidgetNames);
+	URuntimeGameplaySettingsComponentGroupWidget* ComponentGroupWidget =
+		WidgetTree->ConstructWidget<URuntimeGameplaySettingsComponentGroupWidget>(
+			ComponentGroupWidgetClass,
+			FName(*GroupWidgetName));
+	if (!ComponentGroupWidget)
+	{
+		return CategoryBox;
+	}
+
+	ComponentGroupWidget->Initialize();
+	ComponentGroupWidget->SetComponentTitleText(FText::FromString(ComponentGroupName));
+	if (UVerticalBoxSlot* GroupSlot = CategoryBox->AddChildToVerticalBox(ComponentGroupWidget))
+	{
+		GroupSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 20.0f));
+		GroupSlot->SetHorizontalAlignment(HAlign_Fill);
+	}
+
+	CategoryState->ComponentGroupWidgets.Add(ComponentGroupName, ComponentGroupWidget);
+	if (UVerticalBox* GroupPropertiesBox = ComponentGroupWidget->GetOrCreatePropertiesBox())
+	{
+		return GroupPropertiesBox;
+	}
+
+	return CategoryBox;
+}
+
+UVerticalBox* URuntimeGameplaySettingsWidget::GetOrCreateManualCategoryContentBox(
+	const FString& RuntimeCategoryName)
+{
+	FString SanitizedCategoryName = RuntimeCategoryName.TrimStartAndEnd();
+	if (SanitizedCategoryName.IsEmpty() || SanitizedCategoryName.Equals(TEXT("Common"), ESearchCase::IgnoreCase))
+	{
+		SanitizedCategoryName = TEXT("Common");
+	}
+
+	return GetOrCreateCategoryContentBox(SanitizedCategoryName);
+}
+
+UVerticalBox* URuntimeGameplaySettingsWidget::GetOrCreateManualParameterGroupContentBox(
+	const FString& RuntimeCategoryName,
+	const FString& GroupDisplayName)
+{
+	const FString SanitizedCategoryName = RuntimeCategoryName.TrimStartAndEnd().IsEmpty()
+		? FString(TEXT("Common"))
+		: RuntimeCategoryName.TrimStartAndEnd();
+	return GetOrCreateComponentGroupContentBox(SanitizedCategoryName, GroupDisplayName);
+}
+
+URuntimeGameplaySettingsCheckboxWidget* URuntimeGameplaySettingsWidget::AddManualBoolParameter(
+	const FString& RuntimeCategoryName,
+	const FString& GroupDisplayName,
+	const FText& ParameterName,
+	bool bCurrentValue,
+	bool bDefaultValue,
+	const FText& InToolTipText)
+{
+	if (!WidgetTree || !BoolPropertyWidgetClass)
+	{
+		return nullptr;
+	}
+
+	const FString WidgetName = MakeUniqueWidgetName(TEXT("ManualBool"), ParameterName.ToString(), UsedGeneratedWidgetNames);
+	URuntimeGameplaySettingsCheckboxWidget* CheckboxWidget =
+		WidgetTree->ConstructWidget<URuntimeGameplaySettingsCheckboxWidget>(
+			BoolPropertyWidgetClass,
+			FName(*WidgetName));
+	if (!CheckboxWidget)
+	{
+		return nullptr;
+	}
+
+	CheckboxWidget->Initialize();
+	CheckboxWidget->SetParameterName(ParameterName);
+	CheckboxWidget->SetCheckboxValue(bCurrentValue);
+	CheckboxWidget->SetDefaultCheckboxValue(bDefaultValue);
+	AddManualParameterWidget(RuntimeCategoryName, GroupDisplayName, CheckboxWidget, InToolTipText);
+	return CheckboxWidget;
+}
+
+URuntimeGameplaySettingsParameterWidget* URuntimeGameplaySettingsWidget::AddManualFloatParameter(
+	const FString& RuntimeCategoryName,
+	const FString& GroupDisplayName,
+	const FText& ParameterName,
+	float CurrentValue,
+	float DefaultValue,
+	float MinValue,
+	float MaxValue,
+	float StepSize,
+	const FText& InToolTipText)
+{
+	if (!WidgetTree || !NumberPropertyWidgetClass)
+	{
+		return nullptr;
+	}
+
+	const FString WidgetName = MakeUniqueWidgetName(TEXT("ManualFloat"), ParameterName.ToString(), UsedGeneratedWidgetNames);
+	URuntimeGameplaySettingsParameterWidget* ParameterWidget =
+		WidgetTree->ConstructWidget<URuntimeGameplaySettingsParameterWidget>(
+			NumberPropertyWidgetClass,
+			FName(*WidgetName));
+	if (!ParameterWidget)
+	{
+		return nullptr;
+	}
+
+	ParameterWidget->Initialize();
+	ParameterWidget->SetParameterName(ParameterName);
+	ParameterWidget->SetParameterRange(MinValue, MaxValue, StepSize);
+	ParameterWidget->SetParameterValue(CurrentValue);
+	ParameterWidget->SetDefaultParameterValue(DefaultValue);
+	AddManualParameterWidget(RuntimeCategoryName, GroupDisplayName, ParameterWidget, InToolTipText);
+	return ParameterWidget;
+}
+
+URuntimeGameplaySettingsParameterWidget* URuntimeGameplaySettingsWidget::AddManualIntParameter(
+	const FString& RuntimeCategoryName,
+	const FString& GroupDisplayName,
+	const FText& ParameterName,
+	int32 CurrentValue,
+	int32 DefaultValue,
+	int32 MinValue,
+	int32 MaxValue,
+	const FText& InToolTipText)
+{
+	return AddManualFloatParameter(
+		RuntimeCategoryName,
+		GroupDisplayName,
+		ParameterName,
+		static_cast<float>(CurrentValue),
+		static_cast<float>(DefaultValue),
+		static_cast<float>(MinValue),
+		static_cast<float>(MaxValue),
+		1.0f,
+		InToolTipText);
+}
+
+URuntimeGameplaySettingsEnumWidget* URuntimeGameplaySettingsWidget::AddManualEnumParameter(
+	const FString& RuntimeCategoryName,
+	const FString& GroupDisplayName,
+	const FText& ParameterName,
+	const UEnum* EnumClass,
+	int32 CurrentValue,
+	int32 DefaultValue,
+	const FText& InToolTipText)
+{
+	if (!WidgetTree || !EnumPropertyWidgetClass)
+	{
+		return nullptr;
+	}
+
+	const FString WidgetName = MakeUniqueWidgetName(TEXT("ManualEnum"), ParameterName.ToString(), UsedGeneratedWidgetNames);
+	URuntimeGameplaySettingsEnumWidget* EnumWidget =
+		WidgetTree->ConstructWidget<URuntimeGameplaySettingsEnumWidget>(
+			EnumPropertyWidgetClass,
+			FName(*WidgetName));
+	if (!EnumWidget)
+	{
+		return nullptr;
+	}
+
+	EnumWidget->Initialize();
+	EnumWidget->SetParameterName(ParameterName);
+	EnumWidget->SetOptionsFromEnum(EnumClass);
+	EnumWidget->SetSelectedValue(CurrentValue);
+	EnumWidget->SetDefaultSelectedValue(DefaultValue);
+	AddManualParameterWidget(RuntimeCategoryName, GroupDisplayName, EnumWidget, InToolTipText);
+	return EnumWidget;
+}
+
+URuntimeGameplaySettingsVectorWidget* URuntimeGameplaySettingsWidget::AddManualVectorParameter(
+	const FString& RuntimeCategoryName,
+	const FString& GroupDisplayName,
+	const FText& ParameterName,
+	const FVector& CurrentValue,
+	const FVector& DefaultValue,
+	const FText& InToolTipText)
+{
+	if (!WidgetTree || !VectorPropertyWidgetClass)
+	{
+		return nullptr;
+	}
+
+	const FString WidgetName = MakeUniqueWidgetName(TEXT("ManualVector"), ParameterName.ToString(), UsedGeneratedWidgetNames);
+	URuntimeGameplaySettingsVectorWidget* VectorWidget =
+		WidgetTree->ConstructWidget<URuntimeGameplaySettingsVectorWidget>(
+			VectorPropertyWidgetClass,
+			FName(*WidgetName));
+	if (!VectorWidget)
+	{
+		return nullptr;
+	}
+
+	VectorWidget->Initialize();
+	VectorWidget->SetParameterName(ParameterName);
+	VectorWidget->SetVectorValue(CurrentValue);
+	VectorWidget->SetDefaultVectorValue(DefaultValue);
+	AddManualParameterWidget(RuntimeCategoryName, GroupDisplayName, VectorWidget, InToolTipText);
+	return VectorWidget;
+}
+
+URuntimeGameplaySettingsVectorWidget* URuntimeGameplaySettingsWidget::AddManualRotatorParameter(
+	const FString& RuntimeCategoryName,
+	const FString& GroupDisplayName,
+	const FText& ParameterName,
+	const FRotator& CurrentValue,
+	const FRotator& DefaultValue,
+	const FText& InToolTipText)
+{
+	return AddManualVectorParameter(
+		RuntimeCategoryName,
+		GroupDisplayName,
+		ParameterName,
+		FVector(CurrentValue.Pitch, CurrentValue.Yaw, CurrentValue.Roll),
+		FVector(DefaultValue.Pitch, DefaultValue.Yaw, DefaultValue.Roll),
+		InToolTipText);
+}
+
+void URuntimeGameplaySettingsWidget::AddManualParameterWidget(
+	const FString& RuntimeCategoryName,
+	const FString& GroupDisplayName,
+	UWidget* ParameterWidget,
+	const FText& InToolTipText)
+{
+	if (!ParameterWidget)
+	{
+		return;
+	}
+
+	UVerticalBox* ParentBox = GroupDisplayName.TrimStartAndEnd().IsEmpty()
+		? GetOrCreateManualCategoryContentBox(RuntimeCategoryName)
+		: GetOrCreateManualParameterGroupContentBox(RuntimeCategoryName, GroupDisplayName);
+	if (!ParentBox)
+	{
+		return;
+	}
+
+	if (!InToolTipText.IsEmpty())
+	{
+		ParameterWidget->SetToolTip(CreateToolTipWidget(InToolTipText));
+	}
+
+	if (UVerticalBoxSlot* ParameterSlot = ParentBox->AddChildToVerticalBox(ParameterWidget))
+	{
+		ParameterSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 10.0f));
+	}
+}
+
+void URuntimeGameplaySettingsWidget::AddManualParameterWidget(
+	const FString& RuntimeCategoryName,
+	const FString& GroupDisplayName,
+	UWidget* ParameterWidget)
+{
+	AddManualParameterWidget(RuntimeCategoryName, GroupDisplayName, ParameterWidget, FText::GetEmpty());
+}
+
+URuntimeGameplaySettingsWidget::FRuntimeGameplaySettingsCategoryState*
+URuntimeGameplaySettingsWidget::FindCategoryState(const FString& RuntimeCategoryName)
+{
+	for (FRuntimeGameplaySettingsCategoryState& CategoryState : CategoryStates)
+	{
+		if (CategoryState.RuntimeCategoryName.Equals(RuntimeCategoryName, ESearchCase::IgnoreCase))
+		{
+			return &CategoryState;
+		}
+	}
+
+	return nullptr;
+}
+
 FString URuntimeGameplaySettingsWidget::GetRuntimeCategoryName(
 	const FRuntimeGameplaySettingsPropertyEntry& PropertyEntry) const
 {
@@ -468,6 +838,117 @@ FString URuntimeGameplaySettingsWidget::GetRuntimeCategoryName(
 		RuntimeCategoryName = TEXT("Common");
 	}
 	return RuntimeCategoryName;
+}
+
+FString URuntimeGameplaySettingsWidget::GetComponentGroupDisplayName(
+	UObject* TargetObject,
+	const FRuntimeGameplaySettingsPropertyEntry& PropertyEntry) const
+{
+	if (!PropertyEntry.ComponentName.IsNone())
+	{
+		return PropertyEntry.ComponentName.ToString();
+	}
+
+	if (TargetObject && TargetObject->GetClass())
+	{
+		return GetTargetClassDisplayName(TargetObject->GetClass());
+	}
+
+	return TEXT("Object");
+}
+
+FText URuntimeGameplaySettingsWidget::GetPropertyRowLabelText(
+	const FRuntimeGameplaySettingsPropertyEntry& PropertyEntry) const
+{
+	FString LabelString = PropertyEntry.DisplayName.IsEmpty()
+		? FRuntimeGameplaySettingsPropertyAccess::BuildPropertyPathString(
+			PropertyEntry.PropertyPath,
+			PropertyEntry.PropertyName)
+		: PropertyEntry.DisplayName.ToString();
+
+	if (!PropertyEntry.ComponentName.IsNone())
+	{
+		const FString ComponentPrefix = PropertyEntry.ComponentName.ToString() + TEXT(".");
+		LabelString.RemoveFromStart(ComponentPrefix, ESearchCase::IgnoreCase);
+	}
+
+	if (LabelString.IsEmpty())
+	{
+		LabelString = PropertyEntry.PropertyName.ToString();
+	}
+
+	return FText::FromString(LabelString);
+}
+
+FText URuntimeGameplaySettingsWidget::GetPropertyToolTipText(
+	UObject* TargetObject,
+	const FRuntimeGameplaySettingsPropertyEntry& PropertyEntry) const
+{
+	const FProperty* RuntimeProperty =
+		FRuntimeGameplaySettingsPropertyAccess::FindRuntimeProperty(TargetObject, PropertyEntry);
+	if (!RuntimeProperty)
+	{
+		return FText::GetEmpty();
+	}
+
+	const FText PropertyToolTipText = RuntimeProperty->GetToolTipText();
+	if (!PropertyToolTipText.IsEmpty())
+	{
+		return PropertyToolTipText;
+	}
+
+	const FString ToolTipMetadata = RuntimeProperty->GetMetaData(TEXT("ToolTip"));
+	return ToolTipMetadata.IsEmpty() ? FText::GetEmpty() : FText::FromString(ToolTipMetadata);
+}
+
+bool URuntimeGameplaySettingsWidget::TryGetBaselineValue(
+	UObject* TargetObject,
+	const FRuntimeGameplaySettingsPropertyEntry& PropertyEntry,
+	FRuntimeGameplaySettingsValue& OutValue) const
+{
+	if (!TargetObject || !SettingsSubsystem)
+	{
+		return false;
+	}
+
+	FRuntimeGameplaySettingsSnapshot BaselineSnapshot;
+	if (!SettingsSubsystem->TryGetBaselineSnapshot(BaselineSnapshot))
+	{
+		return false;
+	}
+
+	for (const FRuntimeGameplaySettingsObjectSnapshot& ObjectSnapshot : BaselineSnapshot.Objects)
+	{
+		UClass* SnapshotTargetClass = ObjectSnapshot.TargetClassPath.TryLoadClass<UObject>();
+		if (!SnapshotTargetClass || !TargetObject->IsA(SnapshotTargetClass))
+		{
+			continue;
+		}
+
+		for (const FRuntimeGameplaySettingsPropertySnapshot& PropertySnapshot : ObjectSnapshot.Properties)
+		{
+			if (DoesSnapshotPropertyMatchEntry(PropertySnapshot, PropertyEntry))
+			{
+				OutValue = PropertySnapshot.Value;
+				return OutValue.ValueType == PropertyEntry.ValueType;
+			}
+		}
+	}
+
+	return false;
+}
+
+bool URuntimeGameplaySettingsWidget::DoesSnapshotPropertyMatchEntry(
+	const FRuntimeGameplaySettingsPropertySnapshot& PropertySnapshot,
+	const FRuntimeGameplaySettingsPropertyEntry& PropertyEntry) const
+{
+	return PropertySnapshot.bIsComponentProperty == PropertyEntry.bIsComponentProperty
+		&& PropertySnapshot.ComponentName == PropertyEntry.ComponentName
+		&& PropertySnapshot.ComponentClassPath.Equals(PropertyEntry.ComponentClassPath, ESearchCase::IgnoreCase)
+		&& PropertySnapshot.PropertyName == PropertyEntry.PropertyName
+		&& PropertySnapshot.PropertyPath == PropertyEntry.PropertyPath
+		&& PropertySnapshot.ValueType == PropertyEntry.ValueType
+		&& PropertySnapshot.EnumPath.Equals(PropertyEntry.EnumPath, ESearchCase::IgnoreCase);
 }
 
 FRuntimeGameplaySettingsValue URuntimeGameplaySettingsWidget::GetRowValue(
@@ -793,6 +1274,86 @@ UTextBlock* URuntimeGameplaySettingsWidget::CreateTextBlock(const FText& Text)
 	return TextBlock;
 }
 
+UWidget* URuntimeGameplaySettingsWidget::CreateToolTipWidget(const FText& InToolTipText)
+{
+	if (!WidgetTree || InToolTipText.IsEmpty())
+	{
+		return nullptr;
+	}
+
+	UBorder* ToolTipBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
+	UTextBlock* ToolTipTextBlock = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+	if (!ToolTipBorder || !ToolTipTextBlock)
+	{
+		return nullptr;
+	}
+
+	FSlateFontInfo ToolTipFont = ToolTipTextBlock->GetFont();
+	ToolTipFont.Size = FMath::Max(
+		1,
+		FMath::RoundToInt(RuntimeGameplaySettingsBaseToolTipFontSize * RuntimeGameplaySettingsToolTipFontScale));
+	ToolTipTextBlock->SetFont(ToolTipFont);
+	ToolTipTextBlock->SetText(InToolTipText);
+	ToolTipTextBlock->SetAutoWrapText(true);
+	ToolTipTextBlock->SetWrapTextAt(700.0f);
+	ToolTipTextBlock->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+
+	ToolTipBorder->SetBrushColor(FLinearColor(0.0f, 0.0f, 0.0f, 0.9f));
+	ToolTipBorder->SetPadding(FMargin(8.0f, 6.0f));
+	ToolTipBorder->AddChild(ToolTipTextBlock);
+	return ToolTipBorder;
+}
+
+void URuntimeGameplaySettingsWidget::ApplyConfiguredWidgetClasses()
+{
+	const URuntimeGameplaySettingsProjectSettings* Settings =
+		GetDefault<URuntimeGameplaySettingsProjectSettings>();
+	if (!Settings)
+	{
+		return;
+	}
+
+	SaveSlotPanelWidgetClass = ResolveConfiguredWidgetClass(
+		Settings->SaveSlotPanelWidgetClass,
+		SaveSlotPanelWidgetClass);
+	ButtonsOverlayWidgetClass = ResolveConfiguredWidgetClass(
+		Settings->ButtonsOverlayWidgetClass,
+		ButtonsOverlayWidgetClass);
+	CategoryTabsWidgetClass = ResolveConfiguredWidgetClass(
+		Settings->CategoryTabsWidgetClass,
+		CategoryTabsWidgetClass);
+	CategoryPageWidgetClass = ResolveConfiguredWidgetClass(
+		Settings->CategoryPageWidgetClass,
+		CategoryPageWidgetClass);
+	ComponentGroupWidgetClass = ResolveConfiguredWidgetClass(
+		Settings->ComponentGroupWidgetClass,
+		ComponentGroupWidgetClass);
+	CategoryButtonWidgetClass = ResolveConfiguredWidgetClass(
+		Settings->CategoryButtonWidgetClass,
+		CategoryButtonWidgetClass);
+	BoolPropertyWidgetClass = ResolveConfiguredWidgetClass(
+		Settings->BoolPropertyWidgetClass,
+		BoolPropertyWidgetClass);
+	NumberPropertyWidgetClass = ResolveConfiguredWidgetClass(
+		Settings->NumberPropertyWidgetClass,
+		NumberPropertyWidgetClass);
+	EnumPropertyWidgetClass = ResolveConfiguredWidgetClass(
+		Settings->EnumPropertyWidgetClass,
+		EnumPropertyWidgetClass);
+	VectorPropertyWidgetClass = ResolveConfiguredWidgetClass(
+		Settings->VectorPropertyWidgetClass,
+		VectorPropertyWidgetClass);
+	CurvePropertyWidgetClass = ResolveConfiguredWidgetClass(
+		Settings->CurvePropertyWidgetClass,
+		CurvePropertyWidgetClass);
+	CurveAssetPropertyWidgetClass = ResolveConfiguredWidgetClass(
+		Settings->CurveAssetPropertyWidgetClass,
+		CurveAssetPropertyWidgetClass);
+	FloatArrayPropertyWidgetClass = ResolveConfiguredWidgetClass(
+		Settings->FloatArrayPropertyWidgetClass,
+		FloatArrayPropertyWidgetClass);
+}
+
 void URuntimeGameplaySettingsWidget::EnsureDefaultWidgetTree()
 {
 	if (!WidgetTree || WidgetTree->RootWidget)
@@ -810,6 +1371,8 @@ void URuntimeGameplaySettingsWidget::BuildDefaultWidgetTree()
 		return;
 	}
 
+	ApplyConfiguredWidgetClasses();
+
 	UCanvasPanel* CanvasPanel = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("CanvasPanel"));
 	UImage* BackgroundImg = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("BackgroundImg"));
 	UHorizontalBox* HorizontalBox = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("HorizontalBox"));
@@ -817,13 +1380,13 @@ void URuntimeGameplaySettingsWidget::BuildDefaultWidgetTree()
 	UVerticalBox* VerticalBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("VerticalBox"));
 
 	SaveSlotPanelWidget = WidgetTree->ConstructWidget<URuntimeGameplaySettingsSaveSlotPanelWidget>(
-		URuntimeGameplaySettingsSaveSlotPanelWidget::StaticClass(),
+		SaveSlotPanelWidgetClass ? SaveSlotPanelWidgetClass.Get() : URuntimeGameplaySettingsSaveSlotPanelWidget::StaticClass(),
 		TEXT("SaveSlotPanelWidget"));
 	ButtonsOverlayWidget = WidgetTree->ConstructWidget<URuntimeGameplaySettingsButtonsOverlayWidget>(
-		URuntimeGameplaySettingsButtonsOverlayWidget::StaticClass(),
+		ButtonsOverlayWidgetClass ? ButtonsOverlayWidgetClass.Get() : URuntimeGameplaySettingsButtonsOverlayWidget::StaticClass(),
 		TEXT("ButtonsOverlayWidget"));
 	CategoryTabsWidget = WidgetTree->ConstructWidget<URuntimeGameplaySettingsCategoryTabsWidget>(
-		URuntimeGameplaySettingsCategoryTabsWidget::StaticClass(),
+		CategoryTabsWidgetClass ? CategoryTabsWidgetClass.Get() : URuntimeGameplaySettingsCategoryTabsWidget::StaticClass(),
 		TEXT("CategoryTabsWidget"));
 	Switcher_DeveloperSettings = WidgetTree->ConstructWidget<UWidgetSwitcher>(
 		UWidgetSwitcher::StaticClass(),

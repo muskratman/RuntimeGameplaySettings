@@ -14,6 +14,7 @@
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
+#include "Settings/RuntimeGameplaySettingsProjectSettings.h"
 #include "Styling/SlateColor.h"
 #include "UI/Elements/RuntimeGameplaySettingsResetButtonWidget.h"
 
@@ -299,10 +300,27 @@ namespace RuntimeGameplaySettingsElementWidgetHelpers
 
 	inline URuntimeGameplaySettingsResetButtonWidget* CreateResetButtonWidget(UWidgetTree* WidgetTree)
 	{
-		return WidgetTree
-			? WidgetTree->ConstructWidget<URuntimeGameplaySettingsResetButtonWidget>(
-				URuntimeGameplaySettingsResetButtonWidget::StaticClass(),
-				TEXT("ResetButtonWidget"))
-			: nullptr;
+		if (!WidgetTree)
+		{
+			return nullptr;
+		}
+
+		TSubclassOf<URuntimeGameplaySettingsResetButtonWidget> ResetButtonClass =
+			URuntimeGameplaySettingsResetButtonWidget::StaticClass();
+		if (const URuntimeGameplaySettingsProjectSettings* Settings =
+			GetDefault<URuntimeGameplaySettingsProjectSettings>())
+		{
+			if (UClass* ConfiguredClass = Settings->ResetButtonWidgetClass.LoadSynchronous())
+			{
+				if (ConfiguredClass->IsChildOf(URuntimeGameplaySettingsResetButtonWidget::StaticClass()))
+				{
+					ResetButtonClass = ConfiguredClass;
+				}
+			}
+		}
+
+		return WidgetTree->ConstructWidget<URuntimeGameplaySettingsResetButtonWidget>(
+			ResetButtonClass,
+			TEXT("ResetButtonWidget"));
 	}
 }

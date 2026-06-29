@@ -1,5 +1,6 @@
 #include "UI/Elements/RuntimeGameplaySettingsFloatArrayWidget.h"
 
+#include "Settings/RuntimeGameplaySettingsProjectSettings.h"
 #include "UI/Elements/RuntimeGameplaySettingsFloatArrayElementWidget.h"
 
 void URuntimeGameplaySettingsFloatArrayWidget::SetFloatValues(const TArray<float>& InValues)
@@ -138,6 +139,18 @@ TSubclassOf<URuntimeGameplaySettingsArrayElementWidgetBase> URuntimeGameplaySett
 	if (ElementWidgetClass && ElementWidgetClass->IsChildOf(URuntimeGameplaySettingsFloatArrayElementWidget::StaticClass()))
 	{
 		return ElementWidgetClass;
+	}
+
+	if (const URuntimeGameplaySettingsProjectSettings* Settings =
+		GetDefault<URuntimeGameplaySettingsProjectSettings>())
+	{
+		if (UClass* ConfiguredClass = Settings->FloatArrayElementWidgetClass.LoadSynchronous())
+		{
+			if (ConfiguredClass->IsChildOf(URuntimeGameplaySettingsFloatArrayElementWidget::StaticClass()))
+			{
+				return ConfiguredClass;
+			}
+		}
 	}
 
 	return URuntimeGameplaySettingsFloatArrayElementWidget::StaticClass();

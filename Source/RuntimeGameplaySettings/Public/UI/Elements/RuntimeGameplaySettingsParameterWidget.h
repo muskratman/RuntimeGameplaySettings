@@ -20,6 +20,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category="RuntimeGameplaySettings Parameter")
 	void SetDefaultParameterValue(float InValue);
 
+	UFUNCTION(BlueprintCallable, Category="RuntimeGameplaySettings Parameter")
+	void SetParameterRange(float InMinValue, float InMaxValue, float InStepSize = 0.01f);
+
 	UFUNCTION(BlueprintPure, Category="RuntimeGameplaySettings Parameter")
 	float GetParameterValue() const;
 
