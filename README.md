@@ -1,6 +1,6 @@
 # Runtime Gameplay Settings
 
-Runtime Gameplay Settings is an Unreal Engine plugin for exposing selected gameplay `UPROPERTY` values to a local runtime tuning widget. It is intended as a debug/runtime-dev tool for PIE and local development, letting designers and programmers adjust selected Pawn, PlayerController, GameMode, HUD, and GameState settings without adding custom UI or input code to each gameplay class.
+Runtime Gameplay Settings is an Unreal Engine plugin that simplifies access to gameplay settings for game designers by exposing selected gameplay `UPROPERTY` values to a local runtime tuning widget. It is intended as a debug/runtime-dev tool for PIE and local development, letting designers and programmers adjust selected Pawn, PlayerController, GameMode, HUD, and GameState settings without adding custom UI or input code to each gameplay class. The plugin supports settings profiles and can save tuned values into multiple named slots, making it easy to compare, restore, and reuse different gameplay configurations.
 
 ## Overview
 
