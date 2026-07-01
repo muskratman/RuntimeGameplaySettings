@@ -205,6 +205,37 @@ namespace RuntimeGameplaySettingsElementWidgetHelpers
 		Button->SetStyle(ButtonStyle);
 	}
 
+	template <typename EditableTextBoxType>
+	auto GetEditableTextBoxStyle(EditableTextBoxType* EditableTextBox, int)
+		-> decltype(EditableTextBox->GetWidgetStyle())
+	{
+		return EditableTextBox->GetWidgetStyle();
+	}
+
+	inline FEditableTextBoxStyle GetEditableTextBoxStyle(UEditableTextBox* EditableTextBox, ...)
+	{
+		return EditableTextBox->WidgetStyle;
+	}
+
+	template <typename EditableTextBoxType>
+	auto SetEditableTextBoxStyle(
+		EditableTextBoxType* EditableTextBox,
+		const FEditableTextBoxStyle& EditableStyle,
+		int)
+		-> decltype(EditableTextBox->SetWidgetStyle(EditableStyle), void())
+	{
+		EditableTextBox->SetWidgetStyle(EditableStyle);
+	}
+
+	inline void SetEditableTextBoxStyle(
+		UEditableTextBox* EditableTextBox,
+		const FEditableTextBoxStyle& EditableStyle,
+		...)
+	{
+		EditableTextBox->WidgetStyle = EditableStyle;
+		EditableTextBox->SynchronizeProperties();
+	}
+
 	inline void ApplyEditableTextBoxStyle(UEditableTextBox* EditableTextBox, float FontSize = 0.0f)
 	{
 		if (!EditableTextBox)
@@ -212,7 +243,7 @@ namespace RuntimeGameplaySettingsElementWidgetHelpers
 			return;
 		}
 
-		FEditableTextBoxStyle EditableStyle = EditableTextBox->GetWidgetStyle();
+		FEditableTextBoxStyle EditableStyle = GetEditableTextBoxStyle(EditableTextBox, 0);
 		EditableStyle.TextStyle.SetColorAndOpacity(FSlateColor(FLinearColor::Black));
 		if (FontSize > 0.0f)
 		{
@@ -220,7 +251,7 @@ namespace RuntimeGameplaySettingsElementWidgetHelpers
 			FontInfo.Size = static_cast<int32>(FontSize);
 			EditableStyle.TextStyle.SetFont(FontInfo);
 		}
-		EditableTextBox->SetWidgetStyle(EditableStyle);
+		SetEditableTextBoxStyle(EditableTextBox, EditableStyle, 0);
 	}
 
 	inline void ApplySliderThumbSize(USlider* Slider, const FVector2D& ThumbSize)

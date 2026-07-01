@@ -259,12 +259,7 @@ void URuntimeGameplaySettingsSaveSlotPanelWidget::BuildDefaultWidgetTree()
 	}
 	if (Editable_SlotName)
 	{
-		FEditableTextBoxStyle EditableStyle = Editable_SlotName->GetWidgetStyle();
-		FSlateFontInfo EditableFont = EditableStyle.TextStyle.Font;
-		EditableFont.Size = 30;
-		EditableStyle.TextStyle.SetFont(EditableFont);
-		EditableStyle.TextStyle.SetColorAndOpacity(FSlateColor(FLinearColor::Black));
-		Editable_SlotName->SetWidgetStyle(EditableStyle);
+		ApplyEditableTextBoxStyle(Editable_SlotName, 30.0f);
 		Editable_SlotName->SetHintText(INVTEXT("Slot Name"));
 		EditableSizeBox->AddChild(Editable_SlotName);
 	}
