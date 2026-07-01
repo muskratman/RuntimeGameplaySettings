@@ -263,22 +263,25 @@ void URuntimeGameplaySettingsWidget::BuildAutomaticRows()
 		}
 
 		TArray<UObject*> Targets = FRuntimeGameplaySettingsTargetResolver::ResolveTargets(PlayerController, TargetClass);
-		for (UObject* TargetObject : Targets)
+		if (Targets.Num() == 0)
 		{
-			for (const FRuntimeGameplaySettingsPropertyEntry& PropertyEntry : ClassEntry.Properties)
+			continue;
+		}
+
+		UObject* TargetObject = Targets[0];
+		for (const FRuntimeGameplaySettingsPropertyEntry& PropertyEntry : ClassEntry.Properties)
+		{
+			const FString RuntimeCategoryName = GetRuntimeCategoryName(PropertyEntry);
+			UVerticalBox* PropertyParentBox =
+				GetOrCreateComponentGroupContentBox(RuntimeCategoryName, TargetObject, PropertyEntry);
+			if (!PropertyParentBox)
 			{
-				const FString RuntimeCategoryName = GetRuntimeCategoryName(PropertyEntry);
-				UVerticalBox* PropertyParentBox =
-					GetOrCreateComponentGroupContentBox(RuntimeCategoryName, TargetObject, PropertyEntry);
-				if (!PropertyParentBox)
-				{
-					continue;
-				}
-
-				SetCategoryTitleFromTargetClass(RuntimeCategoryName, TargetClass);
-
-				AddPropertyRow(PropertyParentBox, TargetObject, PropertyEntry);
+				continue;
 			}
+
+			SetCategoryTitleFromTargetClass(RuntimeCategoryName, TargetClass);
+
+			AddPropertyRow(PropertyParentBox, TargetObject, PropertyEntry);
 		}
 	}
 

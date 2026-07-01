@@ -74,61 +74,63 @@ void FRuntimeGameplaySettingsClassEntryCustomization::CustomizeChildren(
 
 TSharedRef<SWidget> FRuntimeGameplaySettingsClassEntryCustomization::BuildAvailablePropertiesWidget()
 {
-	TSharedRef<SWidget> BodyWidget = SNew(SVerticalBox)
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.Padding(0.0f, 4.0f, 0.0f, 4.0f)
+	TSharedRef<SWidget> BodyWidget = SNew(SBox)
+		.MaxDesiredHeight(560.0f)
 		[
-			SNew(SSearchBox)
-			.InitialText(FText::FromString(AvailableSearchString))
-			.HintText(LOCTEXT("SearchAvailablePropertiesHint", "Search AvailableProperties"))
-			.OnTextChanged(this, &FRuntimeGameplaySettingsClassEntryCustomization::HandleAvailableSearchTextChanged)
-		]
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.Padding(0.0f, 0.0f, 0.0f, 4.0f)
-		[
-			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+			SNew(SScrollBox)
+			.ConsumeMouseWheel(EConsumeMouseWheel::Always)
+			.ScrollBarAlwaysVisible(true)
+			+ SScrollBox::Slot()
 			[
-				SNew(STextBlock)
-				.Text(this, &FRuntimeGameplaySettingsClassEntryCustomization::GetAvailableSortModeText)
-				.Font(IPropertyTypeCustomizationUtils::GetRegularFont())
-			]
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			.Padding(0.0f, 0.0f, 4.0f, 0.0f)
-			[
-				SNew(SButton)
-				.Text(LOCTEXT("SortAvailableByComponent", "Component"))
-				.OnClicked(this, &FRuntimeGameplaySettingsClassEntryCustomization::HandleSetAvailableSortMode, 0)
-			]
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			.Padding(0.0f, 0.0f, 4.0f, 0.0f)
-			[
-				SNew(SButton)
-				.Text(LOCTEXT("SortAvailableByPropertyName", "PropertyPath"))
-				.OnClicked(this, &FRuntimeGameplaySettingsClassEntryCustomization::HandleSetAvailableSortMode, 1)
-			]
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			[
-				SNew(SButton)
-				.Text(LOCTEXT("SortAvailableByValueType", "ValueType"))
-				.OnClicked(this, &FRuntimeGameplaySettingsClassEntryCustomization::HandleSetAvailableSortMode, 2)
-			]
-		]
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		[
-			SNew(SBox)
-			.MaxDesiredHeight(420.0f)
-			[
-				SNew(SScrollBox)
-				+ SScrollBox::Slot()
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(0.0f, 4.0f, 0.0f, 4.0f)
+				[
+					SNew(SSearchBox)
+					.InitialText(FText::FromString(AvailableSearchString))
+					.HintText(LOCTEXT("SearchAvailablePropertiesHint", "Search AvailableProperties"))
+					.OnTextChanged(this, &FRuntimeGameplaySettingsClassEntryCustomization::HandleAvailableSearchTextChanged)
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(0.0f, 0.0f, 0.0f, 4.0f)
+				[
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+					[
+						SNew(STextBlock)
+						.Text(this, &FRuntimeGameplaySettingsClassEntryCustomization::GetAvailableSortModeText)
+						.Font(IPropertyTypeCustomizationUtils::GetRegularFont())
+					]
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.Padding(0.0f, 0.0f, 4.0f, 0.0f)
+					[
+						SNew(SButton)
+						.Text(LOCTEXT("SortAvailableByComponent", "Component"))
+						.OnClicked(this, &FRuntimeGameplaySettingsClassEntryCustomization::HandleSetAvailableSortMode, 0)
+					]
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.Padding(0.0f, 0.0f, 4.0f, 0.0f)
+					[
+						SNew(SButton)
+						.Text(LOCTEXT("SortAvailableByPropertyName", "PropertyPath"))
+						.OnClicked(this, &FRuntimeGameplaySettingsClassEntryCustomization::HandleSetAvailableSortMode, 1)
+					]
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					[
+						SNew(SButton)
+						.Text(LOCTEXT("SortAvailableByValueType", "ValueType"))
+						.OnClicked(this, &FRuntimeGameplaySettingsClassEntryCustomization::HandleSetAvailableSortMode, 2)
+					]
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
 				[
 					SAssignNew(AvailablePropertiesBox, SVerticalBox)
 				]

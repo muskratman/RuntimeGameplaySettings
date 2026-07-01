@@ -8,6 +8,120 @@
 #include "UObject/TextProperty.h"
 #include "UObject/UnrealType.h"
 
+namespace
+{
+bool TryGetObjectPropertyValue(UObject* Object, FName PropertyName, UObject*& OutValue)
+{
+	OutValue = nullptr;
+	if (!Object)
+	{
+		return false;
+	}
+
+	const FObjectPropertyBase* ObjectProperty = FindFProperty<FObjectPropertyBase>(Object->GetClass(), PropertyName);
+	if (!ObjectProperty)
+	{
+		return false;
+	}
+
+	OutValue = ObjectProperty->GetObjectPropertyValue_InContainer(Object);
+	return OutValue != nullptr;
+}
+
+bool TryGetIntPropertyValue(UObject* Object, FName PropertyName, int32& OutValue)
+{
+	OutValue = INDEX_NONE;
+	if (!Object)
+	{
+		return false;
+	}
+
+	const FIntProperty* IntProperty = FindFProperty<FIntProperty>(Object->GetClass(), PropertyName);
+	if (!IntProperty)
+	{
+		return false;
+	}
+
+	OutValue = IntProperty->GetPropertyValue_InContainer(Object);
+	return true;
+}
+
+bool TryGetFloatPropertyValue(UObject* Object, FName PropertyName, float& OutValue)
+{
+	OutValue = 0.0f;
+	if (!Object)
+	{
+		return false;
+	}
+
+	const FFloatProperty* FloatProperty = FindFProperty<FFloatProperty>(Object->GetClass(), PropertyName);
+	if (!FloatProperty)
+	{
+		return false;
+	}
+
+	OutValue = FloatProperty->GetPropertyValue_InContainer(Object);
+	return true;
+}
+
+bool IsObjectAClassNamed(const UObject* Object, FName ExpectedClassName)
+{
+	for (const UClass* Class = Object ? Object->GetClass() : nullptr; Class; Class = Class->GetSuperClass())
+	{
+		if (Class->GetFName() == ExpectedClassName)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool TryNotifyChaosVehicleWheelChanged(UObject* PropertyOwner, const FProperty* ChangedProperty)
+{
+	if (!PropertyOwner
+		|| !ChangedProperty
+		|| !IsObjectAClassNamed(PropertyOwner, TEXT("ChaosVehicleWheel")))
+	{
+		return false;
+	}
+
+	UObject* VehicleComponent = nullptr;
+	int32 WheelIndex = INDEX_NONE;
+	if (!TryGetObjectPropertyValue(PropertyOwner, TEXT("VehicleComponent"), VehicleComponent)
+		|| !TryGetIntPropertyValue(PropertyOwner, TEXT("WheelIndex"), WheelIndex)
+		|| WheelIndex == INDEX_NONE)
+	{
+		return false;
+	}
+
+	if (ChangedProperty->GetFName() == TEXT("WheelRadius"))
+	{
+		float WheelRadius = 0.0f;
+		UFunction* SetWheelRadiusFunction = VehicleComponent->FindFunction(TEXT("SetWheelRadius"));
+		if (!SetWheelRadiusFunction
+			|| !TryGetFloatPropertyValue(PropertyOwner, TEXT("WheelRadius"), WheelRadius))
+		{
+			return false;
+		}
+
+		struct FRuntimeGameplaySettingsSetWheelRadiusParams
+		{
+			int32 WheelIndex = INDEX_NONE;
+			float Radius = 0.0f;
+		};
+
+		FRuntimeGameplaySettingsSetWheelRadiusParams Params;
+		Params.WheelIndex = WheelIndex;
+		Params.Radius = WheelRadius;
+		VehicleComponent->ProcessEvent(SetWheelRadiusFunction, &Params);
+		return true;
+	}
+
+	return false;
+}
+}
+
 ERuntimeGameplaySettingsValueType FRuntimeGameplaySettingsPropertyAccess::GetSupportedValueType(
 	const FProperty* Property,
 	FString* OutEnumPath)
@@ -561,9 +675,12 @@ void FRuntimeGameplaySettingsPropertyAccess::NotifyRuntimePropertyChanged(
 	UObject* PropertyOwner,
 	const FProperty* ChangedProperty)
 {
-	(void)ChangedProperty;
-
 	if (!PropertyOwner)
+	{
+		return;
+	}
+
+	if (TryNotifyChaosVehicleWheelChanged(PropertyOwner, ChangedProperty))
 	{
 		return;
 	}
