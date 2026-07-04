@@ -124,6 +124,9 @@ struct RUNTIMEGAMEPLAYSETTINGS_API FRuntimeGameplaySettingsPropertyEntry
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Runtime Gameplay Settings")
 	FString RuntimeCategory;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Runtime Gameplay Settings")
+	FString SubCategory;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Runtime Gameplay Settings")
 	ERuntimeGameplaySettingsValueType ValueType = ERuntimeGameplaySettingsValueType::Unsupported;
 

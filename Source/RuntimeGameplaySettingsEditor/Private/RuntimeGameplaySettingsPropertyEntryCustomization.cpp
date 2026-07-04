@@ -109,7 +109,7 @@ void FRuntimeGameplaySettingsPropertyEntryCustomization::CustomizeHeader(
 			StructPropertyHandle->CreatePropertyNameWidget()
 		]
 		.ValueContent()
-		.MinDesiredWidth(620.0f)
+		.MinDesiredWidth(790.0f)
 		[
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot()
@@ -169,12 +169,24 @@ void FRuntimeGameplaySettingsPropertyEntryCustomization::CustomizeHeader(
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
 			.VAlign(VAlign_Center)
+			.Padding(0.0f, 0.0f, 8.0f, 0.0f)
 			[
 				SNew(SEditableTextBox)
 				.MinDesiredWidth(160.0f)
 				.Text(this, &FRuntimeGameplaySettingsPropertyEntryCustomization::GetRuntimeCategoryText)
-				.HintText(LOCTEXT("RuntimeCategoryHint", "Widget category"))
+				.HintText(LOCTEXT("RuntimeCategoryHint", "Widget Tab"))
 				.OnTextCommitted(this, &FRuntimeGameplaySettingsPropertyEntryCustomization::HandleRuntimeCategoryCommitted)
+				.Font(IPropertyTypeCustomizationUtils::GetRegularFont())
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			[
+				SNew(SEditableTextBox)
+				.MinDesiredWidth(150.0f)
+				.Text(this, &FRuntimeGameplaySettingsPropertyEntryCustomization::GetSubCategoryText)
+				.HintText(LOCTEXT("SubCategoryHint", "SubCategory"))
+				.OnTextCommitted(this, &FRuntimeGameplaySettingsPropertyEntryCustomization::HandleSubCategoryCommitted)
 				.Font(IPropertyTypeCustomizationUtils::GetRegularFont())
 			]
 		];
@@ -486,6 +498,7 @@ FReply FRuntimeGameplaySettingsPropertyEntryCustomization::HandleSelectProperty(
 	if (const FRuntimeGameplaySettingsPropertyEntry* CurrentPropertyEntry = GetPropertyEntry())
 	{
 		PreservedPropertyEntry.RuntimeCategory = CurrentPropertyEntry->RuntimeCategory;
+		PreservedPropertyEntry.SubCategory = CurrentPropertyEntry->SubCategory;
 	}
 	const FScopedTransaction Transaction(LOCTEXT("SetRuntimeGameplaySettingsProperty", "Set Runtime Gameplay Settings Property"));
 
@@ -555,6 +568,14 @@ FText FRuntimeGameplaySettingsPropertyEntryCustomization::GetRuntimeCategoryText
 		: FText::GetEmpty();
 }
 
+FText FRuntimeGameplaySettingsPropertyEntryCustomization::GetSubCategoryText() const
+{
+	const FRuntimeGameplaySettingsPropertyEntry* PropertyEntry = GetPropertyEntry();
+	return PropertyEntry
+		? FText::FromString(PropertyEntry->SubCategory)
+		: FText::GetEmpty();
+}
+
 void FRuntimeGameplaySettingsPropertyEntryCustomization::HandleRuntimeCategoryCommitted(
 	const FText& InText,
 	ETextCommit::Type CommitType)
@@ -574,6 +595,34 @@ void FRuntimeGameplaySettingsPropertyEntryCustomization::HandleRuntimeCategoryCo
 	const FScopedTransaction Transaction(LOCTEXT("SetRuntimeGameplaySettingsRuntimeCategory", "Set Runtime Gameplay Settings Runtime Category"));
 	PropertyEntryHandle->NotifyPreChange();
 	PropertyEntry->RuntimeCategory = NewCategory;
+	PropertyEntryHandle->NotifyPostChange(EPropertyChangeType::ValueSet);
+	PropertyEntryHandle->NotifyFinishedChangingProperties();
+
+	if (PropertyUtilities.IsValid())
+	{
+		PropertyUtilities->RequestRefresh();
+	}
+}
+
+void FRuntimeGameplaySettingsPropertyEntryCustomization::HandleSubCategoryCommitted(
+	const FText& InText,
+	ETextCommit::Type CommitType)
+{
+	FRuntimeGameplaySettingsPropertyEntry* PropertyEntry = GetMutablePropertyEntry();
+	if (!PropertyEntry)
+	{
+		return;
+	}
+
+	const FString NewSubCategory = InText.ToString().TrimStartAndEnd();
+	if (PropertyEntry->SubCategory == NewSubCategory)
+	{
+		return;
+	}
+
+	const FScopedTransaction Transaction(LOCTEXT("SetRuntimeGameplaySettingsSubCategory", "Set Runtime Gameplay Settings SubCategory"));
+	PropertyEntryHandle->NotifyPreChange();
+	PropertyEntry->SubCategory = NewSubCategory;
 	PropertyEntryHandle->NotifyPostChange(EPropertyChangeType::ValueSet);
 	PropertyEntryHandle->NotifyFinishedChangingProperties();
 

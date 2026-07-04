@@ -504,8 +504,10 @@ void FRuntimeGameplaySettingsProfileCustomization::RefreshProfileProperties(
 			if (DiscoveredProperty)
 			{
 				const FString RuntimeCategory = SelectedProperty.RuntimeCategory;
+				const FString SubCategory = SelectedProperty.SubCategory;
 				SelectedProperty = FRuntimeGameplaySettingsPropertyAccess::BuildPropertyEntry(*DiscoveredProperty);
 				SelectedProperty.RuntimeCategory = RuntimeCategory;
+				SelectedProperty.SubCategory = SubCategory;
 			}
 		}
 	}

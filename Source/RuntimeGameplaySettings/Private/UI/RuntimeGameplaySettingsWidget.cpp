@@ -254,6 +254,59 @@ void URuntimeGameplaySettingsWidget::BuildAutomaticRows()
 			FRuntimeGameplaySettingsSnapshotLibrary::CaptureSnapshot(PlayerController, Profile));
 	}
 
+	struct FAutomaticPropertyRow
+	{
+		UObject* TargetObject = nullptr;
+		UClass* TargetClass = nullptr;
+		FRuntimeGameplaySettingsPropertyEntry PropertyEntry;
+	};
+
+	struct FAutomaticSubCategoryGroup
+	{
+		FString SubCategoryName;
+		TArray<FAutomaticPropertyRow> Rows;
+	};
+
+	struct FAutomaticCategoryGroup
+	{
+		FString RuntimeCategoryName;
+		TArray<FAutomaticSubCategoryGroup> SubCategories;
+	};
+
+	TArray<FAutomaticCategoryGroup> CategoryGroups;
+
+	const auto FindOrAddCategoryGroup =
+		[&CategoryGroups](const FString& RuntimeCategoryName) -> FAutomaticCategoryGroup&
+		{
+			for (FAutomaticCategoryGroup& CategoryGroup : CategoryGroups)
+			{
+				if (CategoryGroup.RuntimeCategoryName.Equals(RuntimeCategoryName, ESearchCase::IgnoreCase))
+				{
+					return CategoryGroup;
+				}
+			}
+
+			const int32 NewIndex = CategoryGroups.AddDefaulted();
+			CategoryGroups[NewIndex].RuntimeCategoryName = RuntimeCategoryName;
+			return CategoryGroups[NewIndex];
+		};
+
+	const auto FindOrAddSubCategoryGroup =
+		[](FAutomaticCategoryGroup& CategoryGroup, const FString& SubCategoryName) -> FAutomaticSubCategoryGroup&
+		{
+			for (FAutomaticSubCategoryGroup& SubCategoryGroup : CategoryGroup.SubCategories)
+			{
+				if (SubCategoryGroup.SubCategoryName.Equals(SubCategoryName, ESearchCase::IgnoreCase))
+				{
+					return SubCategoryGroup;
+				}
+			}
+
+			const int32 NewIndex = CategoryGroup.SubCategories.AddDefaulted();
+			CategoryGroup.SubCategories[NewIndex].SubCategoryName = SubCategoryName;
+			return CategoryGroup.SubCategories[NewIndex];
+		};
+
 	for (const FRuntimeGameplaySettingsClassEntry& ClassEntry : Profile->RuntimeGameplaySettingsEntries)
 	{
 		UClass* TargetClass = ClassEntry.TargetClass.LoadSynchronous();
@@ -272,16 +325,50 @@ void URuntimeGameplaySettingsWidget::BuildAutomaticRows()
 		for (const FRuntimeGameplaySettingsPropertyEntry& PropertyEntry : ClassEntry.Properties)
 		{
 			const FString RuntimeCategoryName = GetRuntimeCategoryName(PropertyEntry);
+			const FString SubCategoryName = GetSubCategoryGroupDisplayName(PropertyEntry);
+			FAutomaticCategoryGroup& CategoryGroup = FindOrAddCategoryGroup(RuntimeCategoryName);
+			FAutomaticSubCategoryGroup& SubCategoryGroup =
+				FindOrAddSubCategoryGroup(CategoryGroup, SubCategoryName);
+
+			FAutomaticPropertyRow Row;
+			Row.TargetObject = TargetObject;
+			Row.TargetClass = TargetClass;
+			Row.PropertyEntry = PropertyEntry;
+			SubCategoryGroup.Rows.Add(Row);
+		}
+	}
+
+	for (FAutomaticCategoryGroup& CategoryGroup : CategoryGroups)
+	{
+		const int32 DefaultSubCategoryIndex = CategoryGroup.SubCategories.IndexOfByPredicate(
+			[](const FAutomaticSubCategoryGroup& SubCategoryGroup)
+			{
+				return SubCategoryGroup.SubCategoryName.Equals(TEXT("Default"), ESearchCase::IgnoreCase);
+			});
+		if (DefaultSubCategoryIndex > 0)
+		{
+			const FAutomaticSubCategoryGroup DefaultSubCategory =
+				CategoryGroup.SubCategories[DefaultSubCategoryIndex];
+			CategoryGroup.SubCategories.RemoveAt(DefaultSubCategoryIndex);
+			CategoryGroup.SubCategories.Insert(DefaultSubCategory, 0);
+		}
+
+		for (const FAutomaticSubCategoryGroup& SubCategoryGroup : CategoryGroup.SubCategories)
+		{
 			UVerticalBox* PropertyParentBox =
-				GetOrCreateComponentGroupContentBox(RuntimeCategoryName, TargetObject, PropertyEntry);
+				GetOrCreateComponentGroupContentBox(
+					CategoryGroup.RuntimeCategoryName,
+					SubCategoryGroup.SubCategoryName);
 			if (!PropertyParentBox)
 			{
 				continue;
 			}
 
-			SetCategoryTitleFromTargetClass(RuntimeCategoryName, TargetClass);
-
-			AddPropertyRow(PropertyParentBox, TargetObject, PropertyEntry);
+			for (const FAutomaticPropertyRow& Row : SubCategoryGroup.Rows)
+			{
+				SetCategoryTitleFromTargetClass(CategoryGroup.RuntimeCategoryName, Row.TargetClass);
+				AddPropertyRow(PropertyParentBox, Row.TargetObject, Row.PropertyEntry);
+			}
 		}
 	}
 
@@ -525,7 +612,9 @@ UVerticalBox* URuntimeGameplaySettingsWidget::GetOrCreateComponentGroupContentBo
 	UObject* TargetObject,
 	const FRuntimeGameplaySettingsPropertyEntry& PropertyEntry)
 {
-	const FString ComponentGroupName = GetComponentGroupDisplayName(TargetObject, PropertyEntry);
+	(void)TargetObject;
+
+	const FString ComponentGroupName = GetSubCategoryGroupDisplayName(PropertyEntry);
 	return GetOrCreateComponentGroupContentBox(RuntimeCategoryName, ComponentGroupName);
 }
 
@@ -843,21 +932,15 @@ FString URuntimeGameplaySettingsWidget::GetRuntimeCategoryName(
 	return RuntimeCategoryName;
 }
 
-FString URuntimeGameplaySettingsWidget::GetComponentGroupDisplayName(
-	UObject* TargetObject,
+FString URuntimeGameplaySettingsWidget::GetSubCategoryGroupDisplayName(
 	const FRuntimeGameplaySettingsPropertyEntry& PropertyEntry) const
 {
-	if (!PropertyEntry.ComponentName.IsNone())
+	FString SubCategoryName = PropertyEntry.SubCategory.TrimStartAndEnd();
+	if (SubCategoryName.IsEmpty() || SubCategoryName.Equals(TEXT("Default"), ESearchCase::IgnoreCase))
 	{
-		return PropertyEntry.ComponentName.ToString();
+		SubCategoryName = TEXT("Default");
 	}
-
-	if (TargetObject && TargetObject->GetClass())
-	{
-		return GetTargetClassDisplayName(TargetObject->GetClass());
-	}
-
-	return TEXT("Object");
+	return SubCategoryName;
 }
 
 FText URuntimeGameplaySettingsWidget::GetPropertyRowLabelText(
@@ -869,10 +952,11 @@ FText URuntimeGameplaySettingsWidget::GetPropertyRowLabelText(
 			PropertyEntry.PropertyName)
 		: PropertyEntry.DisplayName.ToString();
 
-	if (!PropertyEntry.ComponentName.IsNone())
+	int32 LastDotIndex = INDEX_NONE;
+	if (LabelString.FindLastChar(TEXT('.'), LastDotIndex))
 	{
-		const FString ComponentPrefix = PropertyEntry.ComponentName.ToString() + TEXT(".");
-		LabelString.RemoveFromStart(ComponentPrefix, ESearchCase::IgnoreCase);
+		LabelString.RightChopInline(LastDotIndex + 1, EAllowShrinking::No);
+		LabelString.TrimStartAndEndInline();
 	}
 
 	if (LabelString.IsEmpty())

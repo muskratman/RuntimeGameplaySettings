@@ -38,6 +38,7 @@ protected:
 private:
 	void EnsureDefaultWidgetTree();
 	void BuildDefaultWidgetTree();
+	void ApplyTitleVisibility();
 
 	UPROPERTY(Transient)
 	FText CurrentTitleText;

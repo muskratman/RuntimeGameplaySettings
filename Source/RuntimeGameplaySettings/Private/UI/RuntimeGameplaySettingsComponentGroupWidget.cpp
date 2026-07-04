@@ -14,6 +14,7 @@ void URuntimeGameplaySettingsComponentGroupWidget::SetComponentTitleText(const F
 	if (ComponentName_TextBlock)
 	{
 		ComponentName_TextBlock->SetText(CurrentTitleText);
+		ApplyTitleVisibility();
 	}
 }
 
@@ -61,6 +62,7 @@ void URuntimeGameplaySettingsComponentGroupWidget::NativeConstruct()
 	if (ComponentName_TextBlock)
 	{
 		ComponentName_TextBlock->SetText(CurrentTitleText);
+		ApplyTitleVisibility();
 	}
 }
 
@@ -106,4 +108,17 @@ void URuntimeGameplaySettingsComponentGroupWidget::BuildDefaultWidgetTree()
 	RootBox->AddChildToVerticalBox(Properties_VBox);
 
 	WidgetTree->RootWidget = RootBox;
+}
+
+void URuntimeGameplaySettingsComponentGroupWidget::ApplyTitleVisibility()
+{
+	if (!ComponentName_TextBlock)
+	{
+		return;
+	}
+
+	const bool bIsDefaultSubCategory =
+		CurrentTitleText.ToString().TrimStartAndEnd().Equals(TEXT("Default"), ESearchCase::IgnoreCase);
+	ComponentName_TextBlock->SetVisibility(
+		bIsDefaultSubCategory ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
 }

@@ -205,7 +205,7 @@ private:
 		const FString& GroupDisplayName);
 	FRuntimeGameplaySettingsCategoryState* FindCategoryState(const FString& RuntimeCategoryName);
 	FString GetRuntimeCategoryName(const FRuntimeGameplaySettingsPropertyEntry& PropertyEntry) const;
-	FString GetComponentGroupDisplayName(UObject* TargetObject, const FRuntimeGameplaySettingsPropertyEntry& PropertyEntry) const;
+	FString GetSubCategoryGroupDisplayName(const FRuntimeGameplaySettingsPropertyEntry& PropertyEntry) const;
 	FText GetPropertyRowLabelText(const FRuntimeGameplaySettingsPropertyEntry& PropertyEntry) const;
 	FText GetPropertyToolTipText(UObject* TargetObject, const FRuntimeGameplaySettingsPropertyEntry& PropertyEntry) const;
 	bool TryGetBaselineValue(

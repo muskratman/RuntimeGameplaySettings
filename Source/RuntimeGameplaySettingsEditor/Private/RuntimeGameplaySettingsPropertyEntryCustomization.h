@@ -39,9 +39,11 @@ private:
 	FText GetSelectedPropertyLabel() const;
 	FText GetCurrentValueTypeText() const;
 	FText GetRuntimeCategoryText() const;
+	FText GetSubCategoryText() const;
 	FText GetDiscoveredPropertyLabel(const FRuntimeGameplaySettingsDiscoveredProperty& DiscoveredProperty) const;
 	FText GetValueTypeText(ERuntimeGameplaySettingsValueType ValueType) const;
 	void HandleRuntimeCategoryCommitted(const FText& InText, ETextCommit::Type CommitType);
+	void HandleSubCategoryCommitted(const FText& InText, ETextCommit::Type CommitType);
 	bool HasSelectedComponent() const;
 	bool IsPropertyInSelectedComponent(const FRuntimeGameplaySettingsDiscoveredProperty& DiscoveredProperty) const;
 	bool IsPropertySelectedByOtherRow(const FRuntimeGameplaySettingsDiscoveredProperty& DiscoveredProperty) const;
